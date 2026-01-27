@@ -41,7 +41,7 @@ param(
 # Configuration
 $EnvName = "vicon"
 $EnvPath = "$HOME\envs\$EnvName"
-$RepoPath = "$HOME\dev\vicon"
+$RepoPath = "$HOME\vicon"
 $ViconSDKPath = "$env:ProgramFiles\Vicon\DataStream SDK\Win64\Python\vicon_dssdk"
 $ErrorActionPreference = "Stop"
 
