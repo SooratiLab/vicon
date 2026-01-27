@@ -49,14 +49,20 @@ The setup script will:
 After setup, restart PowerShell and use these commands from anywhere:
 
 ```powershell
+# Activate Python environment
+vicon-env
+
+# Re-run setup script
+vicon-setup
+
 # Start streaming Vicon data
-vicon-stream --pose --verbose
+vicon-stream --pose
 
 # Listen to Vicon stream
 vicon-listen --save --verbose
 ```
 
-Tab completion is enabled - press TAB after the command to see available arguments.
+All commands support tab completion - press TAB after the command to see available arguments.
 
 ### Manual Setup (Alternative)
 
@@ -83,7 +89,7 @@ Create and activate environment:
 ```powershell
 mkdir -p ~/envs; cd ~/envs
 python -m venv vicon
-vicon/Scripts/Activate.ps1
+~/envs/vicon/Scripts/Activate.ps1
 python -m pip install --upgrade pip
 ```
 
@@ -111,8 +117,11 @@ python -c "import vicon_dssdk"
 After running setup and restarting PowerShell:
 
 ```powershell
+# Activate environment (optional - commands work without activation)
+vicon-env
+
 # Start streaming (on Vicon system machine)
-vicon-stream --pose --rate 100 --verbose
+vicon-stream --pose --rate 100
 
 # Listen to stream (on any machine)
 vicon-listen --save --verbose
