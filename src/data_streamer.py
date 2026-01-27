@@ -511,7 +511,9 @@ Note:
     setup_logging(
         experiment_name="vicon_streamer",
         log_to_file=True,
-        log_to_console=True
+        log_to_console=True,
+        verbose=True,
+        level="debug"
     )
     
     # Determine stream mode
