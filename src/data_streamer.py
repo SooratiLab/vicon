@@ -15,12 +15,11 @@ Usage:
 
 Requirements:
     - vicon_dssdk (Vicon DataStream SDK)
-    - numpy (for data handling)
 """
 
+import sys
 import argparse
 import signal
-import sys
 import time
 import json
 import threading
@@ -34,42 +33,11 @@ import platform
 if platform.system() == "Windows":
     vicon_dll_path = r"C:\Program Files\Vicon\DataStream SDK\Win64"
     if os.path.exists(vicon_dll_path):
-        print(f"[DEBUG] Found Vicon SDK DLL directory: {vicon_dll_path}")
-        
-        # List DLLs in the directory
-        try:
-            dll_files = [f for f in os.listdir(vicon_dll_path) if f.endswith('.dll')]
-            print(f"[DEBUG] Found {len(dll_files)} DLL files: {', '.join(dll_files[:5])}")
-        except Exception as e:
-            print(f"[DEBUG] Could not list DLLs: {e}")
-        
         # For Python 3.8+, use add_dll_directory
         if hasattr(os, 'add_dll_directory'):
-            try:
-                os.add_dll_directory(vicon_dll_path)
-                print(f"[DEBUG] Added DLL directory using os.add_dll_directory()")
-            except Exception as e:
-                print(f"[DEBUG] Failed to add DLL directory: {e}")
-        
+            os.add_dll_directory(vicon_dll_path)
         # Also add to PATH as fallback
         os.environ["PATH"] = vicon_dll_path + os.pathsep + os.environ.get("PATH", "")
-        print(f"[DEBUG] Added to PATH environment variable")
-        
-        # Try to explicitly load the main DLL
-        try:
-            import ctypes
-            dll_name = "ViconDataStreamSDK_CPP.dll"
-            dll_full_path = os.path.join(vicon_dll_path, dll_name)
-            if os.path.exists(dll_full_path):
-                print(f"[DEBUG] Attempting to load {dll_name}...")
-                ctypes.cdll.LoadLibrary(dll_full_path)
-                print(f"[DEBUG] Successfully loaded {dll_name}")
-            else:
-                print(f"[DEBUG] DLL not found: {dll_full_path}")
-        except Exception as e:
-            print(f"[DEBUG] Failed to load DLL: {e}")
-    else:
-        print(f"[WARNING] Vicon SDK DLL directory not found: {vicon_dll_path}")
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -77,9 +45,7 @@ from utils.core.broadcaster import DataBroadcaster
 from utils.core.setup_logging import setup_logging, get_named_logger
 
 try:
-    print("[DEBUG] Attempting to import vicon_dssdk...")
     from vicon_dssdk import ViconDataStream
-    print("[DEBUG] Successfully imported ViconDataStream")
 except ImportError as e:
     print("ERROR: vicon_dssdk not found. Please install the Vicon DataStream SDK.")
     print("Install location: C:\\Program Files\\Vicon\\DataStream SDK\\Win64\\Python")
@@ -87,10 +53,9 @@ except ImportError as e:
     sys.exit(1)
 except Exception as e:
     print(f"ERROR: Failed to load vicon_dssdk: {e}")
-    print("This usually means the SDK DLLs are missing or incompatible.")
-    print(f"Expected DLL location: C:\\Program Files\\Vicon\\DataStream SDK\\Win64")
-    import traceback
-    traceback.print_exc()
+    print("This is usually caused by missing DLL dependencies")
+    print("Check: C:\\Program Files\\Vicon\\DataStream SDK\\Win64")
+    print(f"\nCurrent Python: {sys.version}")
     sys.exit(1)
 
 logger = get_named_logger("vicon_streamer", __name__)
