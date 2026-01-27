@@ -42,6 +42,7 @@ if platform.system() == "Windows":
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.core.broadcaster import DataBroadcaster
+from utils.core.plotter import PositionPlotter
 from utils.core.setup_logging import setup_logging, get_named_logger
 
 try:
@@ -75,7 +76,8 @@ class ViconStreamer:
         broadcast_port: int = 5555,
         rate_hz: float = 100.0,
         stream_mode: str = "pose",
-        include_frames: bool = False
+        include_frames: bool = False,
+        enable_plot: bool = False
     ):
         """
         Initialize the Vicon streamer.
@@ -86,12 +88,14 @@ class ViconStreamer:
             rate_hz: Target streaming rate in Hz
             stream_mode: Data mode - "pose", "all"
             include_frames: Whether to stream camera frames
+            enable_plot: Whether to show real-time 2D position plot
         """
         self.vicon_host = vicon_host
         self.stream_mode = stream_mode
         self.include_frames = include_frames
         self.rate_hz = rate_hz
         self.period = 1.0 / rate_hz
+        self.enable_plot = enable_plot
         
         # Vicon client
         try:
@@ -108,6 +112,21 @@ class ViconStreamer:
             port=broadcast_port,
             rate_hz=rate_hz
         )
+        
+        # Plotter (optional)
+        self.plotter: Optional[PositionPlotter] = None
+        if self.enable_plot:
+            try:
+                self.plotter = PositionPlotter(
+                    decay_seconds=15.0,
+                    trail_seconds=10.0,
+                    refresh_interval=0.1,
+                    coord_scale=0.001  # Vicon uses mm, convert to meters
+                )
+                logger.info("Real-time plotter enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize plotter: {e}")
+                self.plotter = None
         
         # Control
         self._running = False
@@ -222,7 +241,7 @@ class ViconStreamer:
         # Keep main thread alive and print stats
         try:
             while self._running:
-                time.sleep(5.0)
+                time.sleep(10.0)
                 self._print_stats()
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
@@ -301,7 +320,20 @@ class ViconStreamer:
             
             # Get segment data (pose)
             if self.stream_mode in ["pose", "all"]:
-                subject_data["segments"] = self._get_segment_data(subject_name)
+                segments = self._get_segment_data(subject_name)
+                subject_data["segments"] = segments
+                
+                # Update plotter with segment positions
+                if self.plotter and segments:
+                    for i, seg in enumerate(segments):
+                        if not seg["position"]["occluded"]:
+                            self.plotter.update(
+                                "VICON",
+                                hash(f"{subject_name}_{seg['name']}") % 10000,  # Unique ID per segment
+                                seg["position"]["x"],
+                                seg["position"]["y"],
+                                seg["position"]["z"]
+                            )
             
             # Get marker data
             if self.stream_mode == "all":
@@ -465,6 +497,13 @@ class ViconStreamer:
         logger.info("Stopping Vicon streamer...")
         self._running = False
         
+        # Close plotter
+        if self.plotter:
+            try:
+                self.plotter.close()
+            except Exception as e:
+                logger.error(f"Error closing plotter: {e}")
+        
         # Stop broadcaster
         self.broadcaster.stop()
         
@@ -515,8 +554,8 @@ Note:
                        help="Vicon server address (host:port, default: localhost:801)")
     parser.add_argument("--port", type=int, default=5555,
                        help="TCP broadcast port (default: 5555)")
-    parser.add_argument("--rate", type=float, default=100.0,
-                       help="Target streaming rate in Hz (default: 100)")
+    parser.add_argument("--rate", type=float, default=30.0,
+                       help="Target streaming rate in Hz (default: 30)")
     
     # Stream modes (mutually exclusive)
     mode_group = parser.add_mutually_exclusive_group(required=True)
@@ -528,6 +567,8 @@ Note:
     # Additional options
     parser.add_argument("--frames", action="store_true",
                        help="Include camera frame metadata")
+    parser.add_argument("--plot", action="store_true",
+                       help="Show real-time 2D position plot")
     
     args = parser.parse_args()
     
@@ -537,7 +578,6 @@ Note:
         log_to_file=True,
         log_to_console=True,
         verbose=True,
-        level="debug"
     )
     
     # Determine stream mode
@@ -550,7 +590,8 @@ Note:
             broadcast_port=args.port,
             rate_hz=args.rate,
             stream_mode=stream_mode,
-            include_frames=args.frames
+            include_frames=args.frames,
+            enable_plot=args.plot
         )
     except Exception as e:
         logger.error(f"Failed to initialize streamer: {e}")
