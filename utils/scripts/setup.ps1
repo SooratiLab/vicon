@@ -39,9 +39,13 @@ param(
 )
 
 # Configuration
-$EnvName = "vicon"
+# Dynamically determine repository path and name from script location
+$ScriptPath = Split-Path -Parent $PSCommandPath
+$RepoPath = Split-Path -Parent (Split-Path -Parent $ScriptPath)
+$RepoName = Split-Path -Leaf $RepoPath
+
+$EnvName = $RepoName
 $EnvPath = "$HOME\envs\$EnvName"
-$RepoPath = "$HOME\vicon"
 $ViconSDKPath = "$env:ProgramFiles\Vicon\DataStream SDK\Win64\Python\vicon_dssdk"
 $ErrorActionPreference = "Stop"
 
@@ -340,11 +344,17 @@ function New-ConvenienceCommands {
         New-Item -ItemType File -Path $profilePath -Force | Out-Null
     }
     
-    # Check if commands already exist
+    # Check if commands already exist - look for vicon-env specifically
     $profileContent = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
-    if ($profileContent -like "*# Vicon Commands*") {
+    if ($profileContent -like "*function vicon-env*") {
         Write-Host "[OK]" -ForegroundColor Green
         return
+    }
+    
+    # If old commands exist without vicon-env, remove them first
+    if ($profileContent -like "*# Vicon Commands*") {
+        $profileContent = $profileContent -replace '(?s)# Vicon Commands.*?(?=\r?\n\r?\n|\z)', ''
+        Set-Content -Path $profilePath -Value $profileContent.Trim()
     }
     
     # Add convenience commands to profile with auto-completion
