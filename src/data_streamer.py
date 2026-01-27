@@ -27,12 +27,8 @@ import threading
 from typing import Optional, Dict, List, Any
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.core.broadcaster import DataBroadcaster
-from utils.core.setup_logging import setup_logging, get_named_logger
-
-# Add Vicon SDK DLL directory to PATH (required for Windows)
+# CRITICAL: Add Vicon SDK DLL directory to PATH before any vicon_dssdk imports
+# The SDK's Python wrapper needs to find ViconDataStreamSDK_CPP.dll at import time
 import os
 import platform
 if platform.system() == "Windows":
@@ -44,6 +40,11 @@ if platform.system() == "Windows":
         # Also add to PATH as fallback
         os.environ["PATH"] = vicon_dll_path + os.pathsep + os.environ.get("PATH", "")
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.core.broadcaster import DataBroadcaster
+from utils.core.setup_logging import setup_logging, get_named_logger
+
 try:
     from vicon_dssdk import ViconDataStream
 except ImportError as e:
@@ -54,6 +55,7 @@ except ImportError as e:
 except Exception as e:
     print(f"ERROR: Failed to load vicon_dssdk: {e}")
     print("This usually means the SDK DLLs are missing or incompatible.")
+    print(f"Expected DLL location: C:\\Program Files\\Vicon\\DataStream SDK\\Win64")
     sys.exit(1)
 
 logger = get_named_logger("vicon_streamer", __name__)
