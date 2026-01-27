@@ -299,7 +299,7 @@ function Install-ViconSDK {
 function Install-Dependencies {
     Write-Step "Installing Dependencies"
     
-    $requirementsFile = "$RepoPath\requirements.txt"
+    $requirementsFile = "$RepoPath\utils\scripts\requirements.txt"
     $pythonExe = "$EnvPath\Scripts\python.exe"
     
     if (!(Test-Path $requirementsFile)) {
