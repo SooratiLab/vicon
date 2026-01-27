@@ -32,11 +32,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.core.broadcaster import DataBroadcaster
 from utils.core.setup_logging import setup_logging, get_named_logger
 
+# Add Vicon SDK DLL directory to PATH (required for Windows)
+import os
+import platform
+if platform.system() == "Windows":
+    vicon_dll_path = r"C:\Program Files\Vicon\DataStream SDK\Win64"
+    if os.path.exists(vicon_dll_path):
+        # For Python 3.8+, use add_dll_directory
+        if hasattr(os, 'add_dll_directory'):
+            os.add_dll_directory(vicon_dll_path)
+        # Also add to PATH as fallback
+        os.environ["PATH"] = vicon_dll_path + os.pathsep + os.environ.get("PATH", "")
+
 try:
     from vicon_dssdk import ViconDataStream
-except ImportError:
+except ImportError as e:
     print("ERROR: vicon_dssdk not found. Please install the Vicon DataStream SDK.")
     print("Install location: C:\\Program Files\\Vicon\\DataStream SDK\\Win64\\Python")
+    print(f"Details: {e}")
+    sys.exit(1)
+except Exception as e:
+    print(f"ERROR: Failed to load vicon_dssdk: {e}")
+    print("This usually means the SDK DLLs are missing or incompatible.")
     sys.exit(1)
 
 logger = get_named_logger("vicon_streamer", __name__)
