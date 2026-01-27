@@ -75,7 +75,12 @@ class ViconStreamer:
         self.period = 1.0 / rate_hz
         
         # Vicon client
-        self.client = ViconDataStream.Client()
+        try:
+            self.client = ViconDataStream.Client()
+        except Exception as e:
+            logger.error(f"Failed to initialize Vicon client: {e}")
+            logger.error("Make sure Vicon DataStream SDK is properly installed")
+            raise
         self._connected = False
         
         # Broadcaster
@@ -520,13 +525,17 @@ Note:
     stream_mode = "all" if args.all_data else "pose"
     
     # Create streamer
-    streamer = ViconStreamer(
-        vicon_host=args.host,
-        broadcast_port=args.port,
-        rate_hz=args.rate,
-        stream_mode=stream_mode,
-        include_frames=args.frames
-    )
+    try:
+        streamer = ViconStreamer(
+            vicon_host=args.host,
+            broadcast_port=args.port,
+            rate_hz=args.rate,
+            stream_mode=stream_mode,
+            include_frames=args.frames
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize streamer: {e}")
+        sys.exit(1)
     
     # Setup signal handlers
     def signal_handler(sig, frame):

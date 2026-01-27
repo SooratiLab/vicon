@@ -165,8 +165,14 @@ function Initialize-Repository {
         if (Test-Path "$RepoPath\.git") {
             Push-Location $RepoPath
             try {
+                $beforeHash = git rev-parse HEAD 2>$null
                 git fetch origin 2>&1 | Out-Null
-                git pull origin main 2>&1 | Out-Null
+                $pullOutput = git pull origin main 2>&1
+                $afterHash = git rev-parse HEAD 2>$null
+                
+                if ($beforeHash -ne $afterHash) {
+                    Write-Host "`n  Updated: $beforeHash -> $afterHash" -ForegroundColor Yellow
+                }
             } catch {}
             Pop-Location
         } else {
@@ -282,6 +288,11 @@ function Install-ViconSDK {
         exit 1
     }
     
+    # Clean up: Delete SDK copy from user directory
+    try {
+        Remove-Item $userSDKPath -Recurse -Force -ErrorAction SilentlyContinue
+    } catch {}
+    
     Write-Host "Installing Vicon SDK... [OK]" -ForegroundColor Green
 }
 
@@ -296,32 +307,27 @@ function Install-Dependencies {
         return
     }
     
-    # Check if requirements are already installed
-    $installedPackages = & $pythonExe -m pip list --format=freeze 2>$null
-    $requiredPackages = Get-Content $requirementsFile | Where-Object { $_ -notmatch "^#" -and $_ -match "\S" }
+    Write-Host ""  # Newline before output
     
-    $needsInstall = $false
-    foreach ($pkg in $requiredPackages) {
-        $pkgName = ($pkg -split "==|>=|<=|>|<|~=")[0].Trim()
-        if ($installedPackages -notmatch "^$pkgName==") {
-            $needsInstall = $true
-            break
-        }
-    }
+    # Temporarily allow errors to be displayed
+    $savedErrorPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     
-    if (!$needsInstall) {
-        Write-Host "[OK]" -ForegroundColor Green
-        return
-    }
+    # Always run pip install to ensure dependencies are up to date
+    & $pythonExe -m pip install -r $requirementsFile
+    $exitCode = $LASTEXITCODE
     
-    try {
-        & $pythonExe -m pip install -r $requirementsFile 2>&1 | Out-Null
-        Write-Host "[OK]" -ForegroundColor Green
-    } catch {
-        Write-Host "[ERROR]" -ForegroundColor Red
-        Write-Host "  - Failed to install dependencies: $_" -ForegroundColor Red
+    # Restore error preference
+    $ErrorActionPreference = $savedErrorPref
+    
+    Write-Host ""  # Newline after output
+    
+    if ($exitCode -ne 0) {
+        Write-Host "[ERROR] Installation failed (exit code: $exitCode)" -ForegroundColor Red
         exit 1
     }
+    
+    Write-Host "Installing Dependencies... [OK]" -ForegroundColor Green
 }
 
 # ============================================================================
@@ -373,7 +379,7 @@ function vicon-env {
 function vicon-setup {
     `$setupScript = "$RepoPath\utils\scripts\setup.ps1"
     if (Test-Path `$setupScript) {
-        & `$setupScript `$args
+        & `$setupScript @args
     } else {
         Write-Host "[ERROR] Setup script not found at: `$setupScript" -ForegroundColor Red
     }
