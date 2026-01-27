@@ -351,6 +351,24 @@ function New-ConvenienceCommands {
     $commands = @"
 
 # Vicon Commands
+function vicon-env {
+    `$activateScript = "$EnvPath\Scripts\Activate.ps1"
+    if (Test-Path `$activateScript) {
+        & `$activateScript
+    } else {
+        Write-Host "[ERROR] Virtual environment not found at: $EnvPath" -ForegroundColor Red
+    }
+}
+
+function vicon-setup {
+    `$setupScript = "$RepoPath\utils\scripts\setup.ps1"
+    if (Test-Path `$setupScript) {
+        & `$setupScript `$args
+    } else {
+        Write-Host "[ERROR] Setup script not found at: `$setupScript" -ForegroundColor Red
+    }
+}
+
 function vicon-stream {
     `$python = "$EnvPath\Scripts\python.exe"
     `$script = "$RepoPath\src\data_streamer.py"
@@ -361,6 +379,23 @@ function vicon-listen {
     `$python = "$EnvPath\Scripts\python.exe"
     `$script = "$RepoPath\src\data_listener.py"
     & `$python `$script `$args
+}
+
+# Auto-completion for vicon-env
+Register-ArgumentCompleter -CommandName vicon-env -ScriptBlock {
+    param(`$commandName, `$parameterName, `$wordToComplete, `$commandAst, `$fakeBoundParameters)
+    @()  # No arguments needed
+}
+
+# Auto-completion for vicon-setup
+Register-ArgumentCompleter -CommandName vicon-setup -ScriptBlock {
+    param(`$commandName, `$parameterName, `$wordToComplete, `$commandAst, `$fakeBoundParameters)
+    
+    `$completions = @(
+        [System.Management.Automation.CompletionResult]::new('-RepoUrl', '-RepoUrl', 'ParameterName', 'Git repository URL')
+    )
+    
+    `$completions | Where-Object { `$_.CompletionText -like "`$wordToComplete*" }
 }
 
 # Auto-completion for vicon-stream
@@ -455,9 +490,14 @@ function Show-CompletionMessage {
     Write-Host "`nSetup completed successfully!" -ForegroundColor Green
     Write-Host "`nNext steps:"
     Write-Host "  1. Restart PowerShell"
-    Write-Host "  2. Activate Environment: $EnvPath\Scripts\Activate.ps1"
+    Write-Host "  2. Activate Environment: vicon-env"
     Write-Host "  3. Use commands: vicon-stream, vicon-listen"
     Write-Host "  4. Press TAB for auto-completion"
+    Write-Host "`nAvailable commands:"
+    Write-Host "  - vicon-env     : Activate Python environment"
+    Write-Host "  - vicon-setup   : Re-run setup script"
+    Write-Host "  - vicon-stream  : Start Vicon data streamer"
+    Write-Host "  - vicon-listen  : Start Vicon data listener"
     Write-Host "`nDocumentation: $RepoPath\README.md`n"
 }
 

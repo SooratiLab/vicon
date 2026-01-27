@@ -1,5 +1,5 @@
 """
-Core utilities for RPi localization.
+Core utilities for Vicon streaming.
 """
 
 from .networking import (
@@ -10,21 +10,11 @@ from .networking import (
     is_port_open
 )
 
-from .broadcaster import PositionBroadcaster
+from .broadcaster import DataBroadcaster
 
-from .csv_writer import PositionCSVWriter
+from .csv_writer import ViconCSVWriter
 
-from .sink import (
-    PositionSink,
-    TurtleBotPosition,
-    ReferenceMarkerPosition
-)
-
-from .position_tracker import (
-    PositionTracker,
-    TrackedObject,
-    TrackedPosition
-)
+from .sink import DataSink
 
 from .setup_logging import (
     setup_logging,
@@ -41,17 +31,11 @@ __all__ = [
     'get_available_port',
     'is_port_open',
     # Broadcasting
-    'PositionBroadcaster',
+    'DataBroadcaster',
     # CSV
-    'PositionCSVWriter',
-    'TurtleBotPosition',
-    'ReferenceMarkerPosition',
+    'ViconCSVWriter',
     # Sink
-    'PositionSink',
-    # Tracking
-    'PositionTracker',
-    'TrackedObject',
-    'TrackedPosition',
+    'DataSink',
     # Logging
     'setup_logging',
     'get_named_logger',
