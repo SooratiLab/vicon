@@ -376,15 +376,6 @@ function vicon-env {
     }
 }
 
-function vicon-setup {
-    `$setupScript = "$RepoPath\utils\scripts\setup.ps1"
-    if (Test-Path `$setupScript) {
-        & `$setupScript @args
-    } else {
-        Write-Host "[ERROR] Setup script not found at: `$setupScript" -ForegroundColor Red
-    }
-}
-
 function vicon-stream {
     `$python = "$EnvPath\Scripts\python.exe"
     `$script = "$RepoPath\src\data_streamer.py"
@@ -401,17 +392,6 @@ function vicon-listen {
 Register-ArgumentCompleter -CommandName vicon-env -ScriptBlock {
     param(`$commandName, `$parameterName, `$wordToComplete, `$commandAst, `$fakeBoundParameters)
     @()  # No arguments needed
-}
-
-# Auto-completion for vicon-setup
-Register-ArgumentCompleter -CommandName vicon-setup -ScriptBlock {
-    param(`$commandName, `$parameterName, `$wordToComplete, `$commandAst, `$fakeBoundParameters)
-    
-    `$completions = @(
-        [System.Management.Automation.CompletionResult]::new('-RepoUrl', '-RepoUrl', 'ParameterName', 'Git repository URL')
-    )
-    
-    `$completions | Where-Object { `$_.CompletionText -like "`$wordToComplete*" }
 }
 
 # Auto-completion for vicon-stream
