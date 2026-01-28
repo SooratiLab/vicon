@@ -9,6 +9,7 @@ Uses TCPServer from networking module for connection management.
 """
 
 import json
+import socket
 import threading
 import time
 import logging
@@ -64,13 +65,6 @@ class DataBroadcaster:
         self._messages_sent = 0
         self._bytes_sent = 0
     
-    def _on_client_connect(self, sock, addr):
-        """Called when a client connects."""
-        logger.info(f"Broadcast client connected: {addr[0]}:{addr[1]}")
-    
-    def _on_client_disconnect(self, sock, addr):
-        """Called when a client disconnects."""
-        logger.warning(f"Broadcast client disconnected: {addr[0]}:{addr[1]}")
     
     def start(self) -> bool:
         """
@@ -89,7 +83,17 @@ class DataBroadcaster:
         )
         self._broadcast_thread.start()
         
-        logger.info(f"Broadcaster ready at {1.0/self.period:.1f} Hz")
+        # Check for network IPs and log if available
+        tailscale_ip = self._get_tailscale_ip()
+        if tailscale_ip:
+            logger.info(f"Broadcaster ready at {1.0/self.period:.1f} Hz (tailscale ip: {tailscale_ip})")
+        else:
+            wlan_ip = self._get_wlan_ip()
+            if wlan_ip:
+                logger.info(f"Broadcaster ready at {1.0/self.period:.1f} Hz (ip: {wlan_ip})")
+            else:
+                logger.info(f"Broadcaster ready at {1.0/self.period:.1f} Hz")
+        
         return True
     
     def stop(self):
@@ -114,6 +118,15 @@ class DataBroadcaster:
     def pause(self):
         """Pause broadcasting (keeps connections but stops sending)."""
         self._latest_payload = None
+    
+    def _on_client_connect(self, sock, addr):
+        """Called when a client connects."""
+        logger.info(f"Broadcast client connected: {addr[0]}:{addr[1]}")
+    
+    def _on_client_disconnect(self, sock, addr):
+        """Called when a client disconnects."""
+        logger.warning(f"Broadcast client disconnected: {addr[0]}:{addr[1]}")
+    
     
     def _broadcast_loop(self):
         """Broadcast payload to all connected clients at configured rate."""
@@ -153,6 +166,36 @@ class DataBroadcaster:
                 last_broadcast = now
             
             time.sleep(self.period)
+
+    def _get_tailscale_ip(self) -> Optional[str]:
+        """Get Tailscale IP address if available."""
+        try:
+            # Tailscale uses CGNAT range 100.64.0.0/10
+            hostname = socket.gethostname()
+            addrs = socket.getaddrinfo(hostname, None)
+            for addr in addrs:
+                ip = addr[4][0]
+                if ip.startswith('100.') and not ip.startswith('127.'):
+                    return ip
+        except Exception:
+            pass
+        return None
+    
+    def _get_wlan_ip(self) -> Optional[str]:
+        """Get WLAN IP address if available."""
+        try:
+            # Try to get local IP by connecting to external address
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.1)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+            s.close()
+            # Exclude loopback and Tailscale IPs
+            if not ip.startswith('127.') and not ip.startswith('100.'):
+                return ip
+        except Exception:
+            pass
+        return None
     
     @property
     def client_count(self) -> int:
