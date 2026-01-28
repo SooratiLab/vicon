@@ -26,6 +26,7 @@ from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.core.plotter import PositionPlotter
 from utils.core.setup_logging import setup_logging, get_named_logger
 
 logger = get_named_logger("vicon_listener", __name__)
@@ -41,7 +42,8 @@ class ViconDataListener:
         host: str = "localhost",
         port: int = 5555,
         save_to_csv: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
+        enable_plot: bool = False
     ):
         """
         Initialize the listener.
@@ -51,11 +53,13 @@ class ViconDataListener:
             port: TCP port to connect to
             save_to_csv: Whether to save data to CSV files
             verbose: Print detailed data information
+            enable_plot: Whether to show real-time 2D position plot
         """
         self.host = host
         self.port = port
         self.save_to_csv = save_to_csv
         self.verbose = verbose
+        self.enable_plot = enable_plot
         
         self._socket: Optional[socket.socket] = None
         self._connected = False
@@ -69,6 +73,21 @@ class ViconDataListener:
         
         # CSV file handles
         self._csv_files = {}
+        
+        # Plotter (optional)
+        self.plotter: Optional[PositionPlotter] = None
+        if self.enable_plot:
+            try:
+                self.plotter = PositionPlotter(
+                    decay_seconds=15.0,
+                    trail_seconds=10.0,
+                    refresh_interval=0.1,
+                    coord_scale=0.001  # Vicon uses mm, convert to meters
+                )
+                logger.info("Real-time plotter enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize plotter: {e}")
+                self.plotter = None
     
     def connect(self) -> bool:
         """Connect to the Vicon streamer."""
@@ -183,6 +202,16 @@ class ViconDataListener:
                 orientation = segment.get("orientation", {})
                 euler = segment.get("euler_xyz", {})
                 
+                # Update plotter with segment position
+                if self.plotter and not position.get("occluded", False):
+                    self.plotter.update(
+                        "VICON",
+                        hash(f"{subject_name}_{segment_name}") % 10000,  # Unique ID per segment
+                        position.get("x", 0),
+                        position.get("y", 0),
+                        position.get("z", 0)
+                    )
+                
                 if self.verbose:
                     logger.info(
                         f"  {subject_name}/{segment_name} | "
@@ -275,6 +304,13 @@ class ViconDataListener:
         logger.info("Stopping listener...")
         self._running = False
         
+        # Close plotter
+        if self.plotter:
+            try:
+                self.plotter.close()
+            except Exception as e:
+                logger.error(f"Error closing plotter: {e}")
+        
         # Close socket
         if self._socket:
             try:
@@ -324,6 +360,8 @@ Note:
                        help="Save data to CSV files")
     parser.add_argument("--verbose", action="store_true",
                        help="Print detailed data information")
+    parser.add_argument("--plot", action="store_true",
+                       help="Show real-time 2D position plot")
     
     args = parser.parse_args()
     
@@ -339,7 +377,8 @@ Note:
         host=args.host,
         port=args.port,
         save_to_csv=args.save,
-        verbose=args.verbose
+        verbose=args.verbose,
+        enable_plot=args.plot
     )
     
     # Setup signal handlers

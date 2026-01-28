@@ -136,6 +136,8 @@ class ViconStreamer:
         self._frames_captured = 0
         self._frames_broadcasted = 0
         self._start_time = 0.0
+        self._broadcast_start_time = 0.0
+        self._prev_client_count = 0
     
     def connect(self) -> bool:
         """Connect to the Vicon DataStream server."""
@@ -283,8 +285,16 @@ class ViconStreamer:
                 
                 # Broadcast to clients
                 if payload and self.broadcaster.client_count > 0:
+                    # Reset broadcast stats when first client connects
+                    if self._prev_client_count == 0:
+                        self._frames_broadcasted = 0
+                        self._broadcast_start_time = time.monotonic()
+                    
                     self.broadcaster.update(payload)
                     self._frames_broadcasted += 1
+                    self._prev_client_count = self.broadcaster.client_count
+                else:
+                    self._prev_client_count = self.broadcaster.client_count
                 
             except ViconDataStream.DataStreamException as e:
                 logger.error(f"Vicon data error: {e}")
@@ -481,9 +491,16 @@ class ViconStreamer:
         if not self._running:
             return
         
+        # Don't log if no clients are connected
+        if self.broadcaster.client_count == 0:
+            return
+        
         uptime = time.monotonic() - self._start_time
         capture_rate = self._frames_captured / uptime if uptime > 0 else 0
-        broadcast_rate = self._frames_broadcasted / uptime if uptime > 0 else 0
+        
+        # Calculate broadcast rate from when clients connected
+        broadcast_uptime = time.monotonic() - self._broadcast_start_time
+        broadcast_rate = self._frames_broadcasted / broadcast_uptime if broadcast_uptime > 0 else 0
         
         logger.info(
             f"Stats | Clients: {self.broadcaster.client_count} | "
