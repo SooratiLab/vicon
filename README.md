@@ -264,3 +264,8 @@ Orientation is provided as:
 ### Python Dependencies
 - `vicon_dssdk` (Vicon DataStream SDK)
 - Standard library only (no additional packages required)
+
+
+### Using the System
+
+An internal document (requires login) on using the system is available [here](https://sotonac-my.sharepoint.com/:b:/g/personal/aoa1v22_soton_ac_uk/IQDQhUJlGf75S63_iGKqfW0SAWEgIa8ja6rCAN2EURyvfEA?e=E3QLjA)
