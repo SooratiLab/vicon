@@ -25,6 +25,8 @@ Install the following software manually:
 
 ### Automated Setup
 
+#### Windows Setup
+
 Run the setup script to automatically configure everything:
 
 ```powershell
@@ -37,17 +39,34 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 .\setup.ps1
 ```
 
-The setup script will:
-- Verify all prerequisites are installed
-- Create Python virtual environment at `~/envs/vicon`
-- Install Vicon DataStream SDK to the environment
-- Install all Python dependencies
-- Set up convenience commands with auto-completion
+#### Linux Setup
+
+For Linux systems, source the auto-completion script:
+
+```bash
+# Clone the repository
+git clone https://github.com/SooratiLab/vicon.git
+cd vicon/utils/scripts
+
+# Add to your shell configuration
+echo "source $(pwd)/auto_comp.sh" >> ~/.bashrc
+source ~/.bashrc
+
+# Or for zsh
+echo "source $(pwd)/auto_comp.sh" >> ~/.zshrc
+source ~/.zshrc
+```
+
+The setup provides:
+- Python virtual environment management at `~/envs/vicon`
+- Convenience commands with auto-completion
+- Pre-configured aliases for common tasks
 
 ### Convenience Commands
 
-After setup, restart PowerShell and use these commands from anywhere:
+After setup, restart your shell and use these commands from anywhere:
 
+**Windows (PowerShell):**
 ```powershell
 # Activate Python environment
 vicon-env
@@ -60,6 +79,22 @@ vicon-stream --pose
 
 # Listen to Vicon stream
 vicon-listen --save --verbose
+```
+
+**Linux (Bash/Zsh):**
+```bash
+# Activate Python environment
+vicon-env
+
+# Start streaming Vicon data
+vicon-stream --pose
+
+# Listen to Vicon stream
+vicon-listen --save --verbose
+
+# Quick aliases
+vl                    # Listen to remote Vicon at 100.89.223.68
+vlplot                # Listen with plotting enabled
 ```
 
 All commands support tab completion - press TAB after the command to see available arguments.
@@ -176,6 +211,53 @@ python src/data_listener.py --host 192.168.1.100 --port 5555 --save
 - `--port`: TCP port to connect to (default: `5555`)
 - `--save`: Save tracking data to CSV files
 - `--verbose`: Print detailed data information
+
+### Using the Python API
+
+For programmatic access, use the `ViconPositionListener` class:
+
+```python
+from vicon.src.position_listener import ViconPositionListener
+
+# Create listener instance
+listener = ViconPositionListener(
+    host="localhost",           # Vicon streamer host
+    port=5555,                   # Vicon streamer port
+    convert_to_meters=True,      # Convert mm to meters (default: True)
+    verbose=False,               # Enable debug logging
+    stale_data_timeout=3.0,      # Max time before data considered stale
+    reconnect_delay=2.0          # Delay between reconnection attempts
+)
+
+# Start receiving data in background thread
+listener.start()
+
+# Get latest positions for all tracked objects
+try:
+    positions = listener.get_latest(check_connection=True)
+    # Returns: {"TB10": (1.234, 2.345, 0.056), "REF1": (0.0, 0.0, 0.0)}
+    
+    for subject_name, (x, y, z) in positions.items():
+        print(f"{subject_name}: x={x:.3f}m, y={y:.3f}m, z={z:.3f}m")
+except ListenerConnectionError as e:
+    print(f"Connection error: {e}")
+
+# Check connection status
+if listener.connected:
+    print("Receiving fresh data")
+
+# Stop listener when done
+listener.stop()
+```
+
+**API Methods:**
+- `start()`: Start background listener thread
+- `stop()`: Stop listener and close connection
+- `get_latest(check_connection=False)`: Get positions dict for all tracked subjects
+  - Returns: `Dict[str, Tuple[float, float, float]]` - subject name → (x, y, z)
+  - Units: meters (if `convert_to_meters=True`) or millimeters
+  - Raises `ListenerConnectionError` if `check_connection=True` and data is stale
+- `connected`: Property indicating if data is fresh (updated within timeout)
 
 ## Data Format
 
