@@ -1,8 +1,8 @@
 """
-Position Plotter for Vicon and TurtleBot Tracking
+Position Plotter for Vicon Tracking
 
 Real-time matplotlib visualization of tracked object positions with trails and velocity vectors.
-Works with both Vicon segments and TurtleBot localization data.
+Works with Vicon segments.
 """
 
 import time
@@ -17,14 +17,12 @@ import matplotlib.pyplot as plt
 
 from utils.core.setup_logging import get_named_logger
 
-logger = get_named_logger("plotter", __name__)
-
 
 class PositionPlotter:
     """
     Real-time position plotter with trails and velocity vectors.
     
-    Works with both Vicon tracking data and TurtleBot localization data.
+    Works with Vicon tracking data.
     
     Args:
         decay_seconds: Remove points not updated for this long
@@ -41,7 +39,7 @@ class PositionPlotter:
         trail_seconds: float = 10.0,
         refresh_interval: float = 0.2,
         velocity_scale: float = 1.0,
-        show_pos: bool = False,
+        show_pos: bool = True,
         coord_scale: float = 0.001,  # Default: convert mm to meters
     ):
         self.decay_seconds = decay_seconds
@@ -50,16 +48,19 @@ class PositionPlotter:
         self.velocity_scale = velocity_scale
         self.show_pos = show_pos
         self.coord_scale = coord_scale
+        self.min_limit = 2.0  # Minimum ±2m from origin
 
-        self._points: Dict[Tuple[str, int], deque] = {}
+        self._points: Dict[Tuple[str, str], deque] = {}
         self._last_draw = 0.0
         self._running = True
+
+        self.logger = get_named_logger("plotter", __name__)
 
         plt.ion()
         self.fig, self.ax = plt.subplots(figsize=(10, 8))
         self._setup_axes()
         plt.show(block=False)
-        logger.info("Plotter initialized")
+        self.logger.info("Plotter initialized")
 
         self.fig.canvas.mpl_connect("key_press_event", self._on_key)
 
@@ -67,11 +68,11 @@ class PositionPlotter:
         """Handle key press events."""
         if event.key == "p":
             self.show_pos = not self.show_pos
-            logger.info(f"Show positions: {self.show_pos}")
+            self.logger.info(f"Show positions: {self.show_pos}")
         elif event.key == "c":
             # Clear all trails
             self._points.clear()
-            logger.info("Cleared all trails")
+            self.logger.info("Cleared all trails")
 
     def _setup_axes(self):
         """Setup the plot axes."""
@@ -81,27 +82,41 @@ class PositionPlotter:
         self.ax.set_aspect("equal", adjustable="box")
         self.ax.grid(True, alpha=0.3)
         
-        # Set initial limits (will auto-adjust)
-        # Default for Vicon in meters (assuming mm to m conversion)
-        self.ax.set_xlim(-2, 6)
-        self.ax.set_ylim(-2, 6)
+        # Center plot at origin with minimum size
+        self.ax.set_xlim(-self.min_limit, self.min_limit)
+        self.ax.set_ylim(-self.min_limit, self.min_limit)
+        
+        # Draw crosshairs at origin
+        self.ax.axhline(y=0, color='k', linewidth=0.5, alpha=0.3)
+        self.ax.axvline(x=0, color='k', linewidth=0.5, alpha=0.3)
 
-    def update(self, label: str, beacon_id: int, x: float, y: float, z: float):
+    def update(self, subject_name: str, x: float, y: float, z: float, segment_name: str = None):
         """
         Update position for a tracked object.
         
+        Object type is automatically determined from subject_name:
+        - Names starting with 'tb' or 'TB' -> Robot (red circle)
+        - Names starting with 'ref' or 'REF' -> Reference (blue square)
+        - All others -> Vicon segment (green diamond)
+        
         Args:
-            label: Object type 
-                - "VICON" or "SEG" for Vicon segments
-                - "BOT" for TurtleBots (backward compatibility)
-                - "REF" for reference markers
-            beacon_id: Unique ID for the object
+            subject_name: Name of the subject (e.g., "TB10", "REF1", "Subject1")
             x: X position (will be scaled by coord_scale)
             y: Y position (will be scaled by coord_scale)
             z: Z position (will be scaled by coord_scale)
+            segment_name: Optional segment name (only if different from subject_name)
         """
         if not self._running:
             return
+
+        # Determine object type from name
+        name_lower = subject_name.lower()
+        if name_lower.startswith('tb'):
+            obj_type = 'robot'
+        elif name_lower.startswith('ref'):
+            obj_type = 'reference'
+        else:
+            obj_type = 'vicon'
 
         # Apply coordinate scaling (e.g., mm to meters)
         x_scaled = x * self.coord_scale
@@ -109,7 +124,9 @@ class PositionPlotter:
         z_scaled = z * self.coord_scale
 
         now = time.monotonic()
-        key = (label, beacon_id)
+        # Use segment name if provided, otherwise just subject name
+        display_name = f"{subject_name}/{segment_name}" if segment_name else subject_name
+        key = (obj_type, display_name)
 
         if key not in self._points:
             self._points[key] = deque()
@@ -146,84 +163,75 @@ class PositionPlotter:
             self.ax.clear()
             self._setup_axes()
 
+            # Calculate required limits based on all points
+            max_extent = self.min_limit
+            for samples in self._points.values():
+                if samples:
+                    for x, y, z, ts in samples:
+                        extent = max(abs(x), abs(y))
+                        max_extent = max(max_extent, extent)
+            
+            # Add 10% margin and ensure never smaller than min_limit
+            plot_limit = max(self.min_limit, max_extent * 1.1)
+            self.ax.set_xlim(-plot_limit, plot_limit)
+            self.ax.set_ylim(-plot_limit, plot_limit)
+
             expired = []
 
-            for (label, bid), samples in self._points.items():
+            for (obj_type, name), samples in self._points.items():
                 if not samples:
-                    expired.append((label, bid))
+                    expired.append((obj_type, name))
                     continue
 
                 last_x, last_y, last_z, last_ts = samples[-1]
 
                 # Check if this object has timed out
                 if now - last_ts > self.decay_seconds:
-                    expired.append((label, bid))
+                    expired.append((obj_type, name))
                     continue
 
                 xs = [p[0] for p in samples]
                 ys = [p[1] for p in samples]
 
-                # Determine object type and styling
-                is_vicon = label in ["VICON", "SEG"]
-                is_bot = label == "BOT"
-                is_ref = label == "REF"
-                
-                if is_vicon:
+                # Determine styling based on object type
+                if obj_type == 'robot':
+                    color = "red"
+                    marker = "o"  # Circle for robots (TB)
+                    size = 100
+                elif obj_type == 'reference':
+                    color = "blue"
+                    marker = "s"  # Square for references (REF)
+                    size = 80
+                else:  # vicon
                     color = "green"
                     marker = "D"  # Diamond for Vicon segments
                     size = 120
-                elif is_bot:
-                    color = "red"
-                    marker = "o"
-                    size = 100
-                else:  # Reference marker
-                    color = "blue"
-                    marker = "s"
-                    size = 80
 
-                # Draw trail (only for moving objects)
-                if len(xs) > 1 and (is_vicon or is_bot):
+                # Draw trail
+                if len(xs) > 1:
                     self.ax.plot(xs, ys, color=color, alpha=0.4, linewidth=2)
 
                 # Draw current position
                 self.ax.scatter(last_x, last_y, c=color, marker=marker, s=size, zorder=5)
 
-                # Label rendering
-                if is_vicon:
-                    name = f"V{bid}"  # Vicon segment
-                elif is_bot:
-                    name = f"M{bid}"  # Mobile robot
-                else:
-                    name = f"R{bid}"  # Reference marker
-                
+                # Render label - name with position if enabled
                 if self.show_pos:
-                    ha, va, dx, dy = self._label_alignment(last_x, last_y)
                     text = f"{name} ({last_x:.2f}, {last_y:.2f})"
-                    self.ax.annotate(
-                        text,
-                        (last_x, last_y),
-                        xytext=(dx, dy),
-                        textcoords="offset points",
-                        ha=ha,
-                        va=va,
-                        fontsize=9,
-                        color=color,
-                        alpha=0.9,
-                        fontweight="bold"
-                    )
                 else:
-                    self.ax.annotate(
-                        name,
-                        (last_x, last_y),
-                        xytext=(5, 5),
-                        textcoords="offset points",
-                        fontsize=10,
-                        color=color,
-                        fontweight="bold"
-                    )
+                    text = name
+                self.ax.annotate(
+                    text,
+                    (last_x, last_y),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=9,
+                    color=color,
+                    alpha=0.9,
+                    fontweight="bold"
+                )
 
-                # Velocity vector (only for moving objects)
-                if (is_vicon or is_bot) and len(samples) >= 2:
+                # Velocity vector
+                if len(samples) >= 2:
                     x0, y0, _, t0 = samples[-2]
                     dt = last_ts - t0
                     if dt > 0:
@@ -256,13 +264,13 @@ class PositionPlotter:
             self.close()
         except Exception as e:
             # Don't crash on plotting errors
-            logger.debug(f"Plot error: {e}")
+            self.logger.debug(f"Plot error: {e}")
 
     def close(self):
         """Close the plotter."""
         self._running = False
         try:
             plt.close(self.fig)
-            logger.info("Plotter closed")
+            self.logger.info("Plotter closed")
         except Exception:
             pass

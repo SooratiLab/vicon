@@ -29,8 +29,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.core.plotter import PositionPlotter
 from utils.core.setup_logging import setup_logging, get_named_logger
 
-logger = get_named_logger("vicon_listener", __name__)
-
 
 class ViconDataListener:
     """
@@ -60,6 +58,7 @@ class ViconDataListener:
         self.save_to_csv = save_to_csv
         self.verbose = verbose
         self.enable_plot = enable_plot
+        self.logger = get_named_logger("vicon_listener", __name__)
         
         self._socket: Optional[socket.socket] = None
         self._connected = False
@@ -84,14 +83,14 @@ class ViconDataListener:
                     refresh_interval=0.1,
                     coord_scale=0.001  # Vicon uses mm, convert to meters
                 )
-                logger.info("Real-time plotter enabled")
+                self.logger.info("Real-time plotter enabled")
             except Exception as e:
-                logger.warning(f"Failed to initialize plotter: {e}")
+                self.logger.warning(f"Failed to initialize plotter: {e}")
                 self.plotter = None
     
     def connect(self) -> bool:
         """Connect to the Vicon streamer."""
-        logger.info(f"Connecting to Vicon streamer at {self.host}:{self.port}...")
+        self.logger.info(f"Connecting to Vicon streamer at {self.host}:{self.port}...")
         
         try:
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -102,26 +101,26 @@ class ViconDataListener:
             self._socket.settimeout(None)
             
             self._connected = True
-            logger.info("Connected successfully")
+            self.logger.info("Connected successfully")
             return True
             
         except socket.timeout:
-            logger.error("Connection timeout")
+            self.logger.error("Connection timeout")
             return False
         except ConnectionRefusedError:
-            logger.error("Connection refused - is the streamer running?")
+            self.logger.error("Connection refused - is the streamer running?")
             return False
         except Exception as e:
-            logger.error(f"Connection error: {e}")
+            self.logger.error(f"Connection error: {e}")
             return False
     
     def start(self):
         """Start listening for data."""
         if not self._connected:
-            logger.error("Not connected to streamer")
+            self.logger.error("Not connected to streamer")
             return
         
-        logger.info("Listening for Vicon data...")
+        self.logger.info("Listening for Vicon data...")
         self._running = True
         self._start_time = time.monotonic()
         
@@ -133,7 +132,7 @@ class ViconDataListener:
                 try:
                     chunk = self._socket.recv(4096)
                     if not chunk:
-                        logger.warning("Connection closed by server")
+                        self.logger.warning("Connection closed by server")
                         break
                     
                     self._bytes_received += len(chunk)
@@ -148,11 +147,11 @@ class ViconDataListener:
                 except socket.timeout:
                     continue
                 except Exception as e:
-                    logger.error(f"Receive error: {e}")
+                    self.logger.error(f"Receive error: {e}")
                     break
                     
         except KeyboardInterrupt:
-            logger.info("Interrupted by user")
+            self.logger.info("Interrupted by user")
         finally:
             self.stop()
     
@@ -171,9 +170,9 @@ class ViconDataListener:
                 self._print_stats()
                 
         except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error: {e}")
+            self.logger.error(f"JSON decode error: {e}")
         except Exception as e:
-            logger.error(f"Message processing error: {e}")
+            self.logger.error(f"Message processing error: {e}")
     
     def _handle_vicon_data(self, payload: Dict[str, Any]):
         """Handle received Vicon data."""
@@ -183,7 +182,7 @@ class ViconDataListener:
         subjects = payload.get("subjects", [])
         
         if self.verbose:
-            logger.info(
+            self.logger.info(
                 f"Frame {frame_number} | "
                 f"Subjects: {len(subjects)} | "
                 f"Latency: {latency_ms:.2f}ms"
@@ -204,16 +203,18 @@ class ViconDataListener:
                 
                 # Update plotter with segment position
                 if self.plotter and not position.get("occluded", False):
+                    # Only pass segment_name if different from subject_name
+                    seg_name = segment_name if segment_name != subject_name else None
                     self.plotter.update(
-                        "VICON",
-                        hash(f"{subject_name}_{segment_name}") % 10000,  # Unique ID per segment
+                        subject_name,
                         position.get("x", 0),
                         position.get("y", 0),
-                        position.get("z", 0)
+                        position.get("z", 0),
+                        segment_name=seg_name
                     )
                 
                 if self.verbose:
-                    logger.info(
+                    self.logger.info(
                         f"  {subject_name}/{segment_name} | "
                         f"Pos: ({position.get('x', 0):.3f}, {position.get('y', 0):.3f}, {position.get('z', 0):.3f}) | "
                         f"Rot: ({euler.get('x', 0):.2f}, {euler.get('y', 0):.2f}, {euler.get('z', 0):.2f})°"
@@ -228,17 +229,17 @@ class ViconDataListener:
             # Process markers
             markers = subject.get("markers", [])
             if markers and self.verbose:
-                logger.info(f"  {subject_name} has {len(markers)} markers")
+                self.logger.info(f"  {subject_name} has {len(markers)} markers")
         
         # Process unlabeled markers
         unlabeled = payload.get("unlabeled_markers", [])
         if unlabeled and self.verbose:
-            logger.info(f"  {len(unlabeled)} unlabeled markers")
+            self.logger.info(f"  {len(unlabeled)} unlabeled markers")
         
         # Process camera data
         cameras = payload.get("cameras", [])
         if cameras and self.verbose:
-            logger.info(f"  {len(cameras)} cameras")
+            self.logger.info(f"  {len(cameras)} cameras")
     
     def _save_segment_to_csv(
         self,
@@ -264,7 +265,7 @@ class ViconDataListener:
             f.write("timestamp,frame_number,pos_x,pos_y,pos_z,quat_x,quat_y,quat_z,quat_w,"
                    "euler_x,euler_y,euler_z,quality,pos_occluded,rot_occluded\n")
             self._csv_files[key] = f
-            logger.info(f"Created CSV file: {csv_path}")
+            self.logger.info(f"Created CSV file: {csv_path}")
         
         # Write data
         f = self._csv_files[key]
@@ -292,7 +293,7 @@ class ViconDataListener:
         current_time = time.monotonic()
         frame_latency = (current_time - self._last_frame_time) * 1000 if self._last_frame_time > 0 else 0
         
-        logger.info(
+        self.logger.info(
             f"Stats | Frames: {self._frames_received} ({receive_rate:.1f} Hz) | "
             f"Data: {self._bytes_received / 1024:.1f} KB | "
             f"Latency: {frame_latency:.1f}ms | "
@@ -301,7 +302,10 @@ class ViconDataListener:
     
     def stop(self):
         """Stop listening and cleanup."""
-        logger.info("Stopping listener...")
+        if not self._running:
+            return
+        
+        self.logger.info("Stopping listener...")
         self._running = False
         
         # Close plotter
@@ -309,7 +313,7 @@ class ViconDataListener:
             try:
                 self.plotter.close()
             except Exception as e:
-                logger.error(f"Error closing plotter: {e}")
+                self.logger.error(f"Error closing plotter: {e}")
         
         # Close socket
         if self._socket:
@@ -326,7 +330,7 @@ class ViconDataListener:
                 pass
         
         self._print_stats()
-        logger.info("Listener stopped")
+        self.logger.info("Listener stopped")
 
 
 def main():
@@ -369,8 +373,10 @@ Note:
     setup_logging(
         experiment_name="vicon_listener",
         log_to_file=True,
-        log_to_console=True
+        log_to_console=False,
+        verbose=True
     )
+    logger = get_named_logger(__name__)
     
     # Create listener
     listener = ViconDataListener(
