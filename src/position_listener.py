@@ -44,6 +44,8 @@ class ViconPositionListener:
         
         # Latest positions: key = subject_name (e.g., "TB10"), value = (x, y, z) in meters or mm
         self._positions: Dict[str, Tuple[float, float, float]] = {}
+        # Latest orientations: key = subject_name, value = (roll, pitch, yaw) Euler angles in radians
+        self._orientations: Dict[str, Tuple[float, float, float]] = {}
         self._last_data_time: float = 0.0
         self._lock = threading.Lock()
         
@@ -101,6 +103,30 @@ class ViconPositionListener:
         with self._lock:
             return dict(self._positions)
     
+    def get_latest_orientation(self, check_connection: bool = False) -> Dict[str, Tuple[float, float, float]]:
+        """
+        Get latest orientations for all tracked objects.
+        
+        Returns:
+            Dict mapping subject name to (roll, pitch, yaw) Euler angles in radians.
+            Returns empty dict if orientation data is not available.
+            Example: {"TB10": (0.0, 0.0, 1.57), "REF1": (0.0, 0.0, 0.0)}
+        """
+        if check_connection:
+            with self._connection_error_lock:
+                if self._connection_error:
+                    error = self._connection_error
+                    self._connection_error = None
+                    raise error
+            
+            if not self.connected:
+                raise ListenerConnectionError(
+                    f"Vicon data stale (last update {time.time() - self._last_data_time:.1f}s ago)"
+                )
+        
+        with self._lock:
+            return dict(self._orientations)
+    
     def _listen_loop(self):
         """Main listener loop."""
         while self._running:
@@ -153,11 +179,12 @@ class ViconPositionListener:
             pass
     
     def _update_positions(self, payload: Dict):
-        """Update positions from payload."""
+        """Update positions and orientations from payload."""
         subjects = payload.get("subjects", [])
         
         with self._lock:
             self._positions.clear()
+            self._orientations.clear()
             
             for subject in subjects:
                 subject_name = subject.get("name", "Unknown")
@@ -165,10 +192,13 @@ class ViconPositionListener:
                 
                 for segment in segments:
                     position = segment.get("position", {})
+                    orientation = segment.get("orientation", {})
                     
+                    # Skip occluded position data
                     if position.get("occluded", False):
                         continue
                     
+                    # Extract position
                     x = position.get("x", 0.0)
                     y = position.get("y", 0.0)
                     z = position.get("z", 0.0)
@@ -179,8 +209,18 @@ class ViconPositionListener:
                         y = y / 1000.0
                         z = z / 1000.0
                     
-                    # Use subject name as key
+                    # Use subject name as key (first segment only)
                     if subject_name not in self._positions:
                         self._positions[subject_name] = (x, y, z)
+                    
+                    # Extract orientation (Euler angles) if available and not occluded
+                    euler = segment.get("euler_xyz", {})
+                    if euler and not euler.get("occluded", False):
+                        roll = euler.get("x", 0.0)
+                        pitch = euler.get("y", 0.0)
+                        yaw = euler.get("z", 0.0)
+                        
+                        if subject_name not in self._orientations:
+                            self._orientations[subject_name] = (roll, pitch, yaw)
             
             self._last_data_time = time.time()
