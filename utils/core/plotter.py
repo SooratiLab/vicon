@@ -31,6 +31,14 @@ class PositionPlotter:
         velocity_scale: Scale factor for velocity arrows
         show_pos: Show position coordinates in labels
         coord_scale: Scale factor for coordinates (1.0 = meters, 0.001 = mm to meters)
+
+    Keybindings:
+        p: Toggle position text labels
+        v: Toggle velocity vectors
+        t: Toggle trace visibility
+        x: Toggle fixed traces (non-decaying, and forces traces visible)
+        c: Clear all traces
+        m: Minimize the plot window
     """
     
     def __init__(
@@ -39,7 +47,7 @@ class PositionPlotter:
         trail_seconds: float = 10.0,
         refresh_interval: float = 0.2,
         velocity_scale: float = 1.0,
-        show_pos: bool = True,
+        show_pos: bool = False,
         coord_scale: float = 0.001,  # Default: convert mm to meters
     ):
         self.decay_seconds = decay_seconds
@@ -47,6 +55,9 @@ class PositionPlotter:
         self.refresh_interval = refresh_interval
         self.velocity_scale = velocity_scale
         self.show_pos = show_pos
+        self.show_vel = False
+        self.show_traces = True
+        self.fixed_traces = False
         self.coord_scale = coord_scale
         self.min_limit = 2.0  # Minimum ±2m from origin
 
@@ -58,21 +69,78 @@ class PositionPlotter:
 
         plt.ion()
         self.fig, self.ax = plt.subplots(figsize=(10, 8))
+        self.fig.subplots_adjust(top=0.88)
         self._setup_axes()
+        self._keybindings_artist = self.fig.text(
+            0.01,
+            0.98,
+            self._keybindings_text(),
+            ha="left",
+            va="top",
+            fontsize=9,
+            color="black",
+            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "gray", "boxstyle": "round,pad=0.3"},
+            zorder=20,
+        )
         plt.show(block=False)
         self.logger.info("Plotter initialized")
+        key_bindings = "\n" + self._keybindings_text(inline=True) + "\n"
+        self.logger.info(key_bindings)
+        # print(key_bindings)
+        
 
         self.fig.canvas.mpl_connect("key_press_event", self._on_key)
 
+    def _keybindings_text(self, inline: bool = False) -> str:
+        """Return keybinding help text for logs and figure legend."""
+        if inline:
+            return (
+                "Keybindings: P: Toggle Positions, V: Toggle Velocity, T: Toggle Traces, "
+                "X: Toggle Fixed Traces, C: Clear Traces, M: Minimize Window"
+            )
+
+        return (
+            "Keys:\n"
+            "P: Positions\n"
+            "V: Velocity\n"
+            "T: Traces\n"
+            "X: Fix traces\n"
+            "C: Clear traces\n"
+            "M: Minimize"
+        )
+
     def _on_key(self, event):
         """Handle key press events."""
-        if event.key == "p":
+        key = (event.key or "").lower()
+
+        if key == "p":
             self.show_pos = not self.show_pos
             self.logger.info(f"Show positions: {self.show_pos}")
-        elif event.key == "c":
+        elif key == "v":
+            self.show_vel = not self.show_vel
+            self.logger.info(f"Show velocity vectors: {self.show_vel}")
+        elif key == "t":
+            self.show_traces = not self.show_traces
+            self.logger.info(f"Show traces: {self.show_traces}")
+        elif key == "x":
+            self.fixed_traces = not self.fixed_traces
+            if self.fixed_traces and not self.show_traces:
+                self.show_traces = True
+                self.logger.info("Fixed traces enabled and traces made visible")
+            else:
+                self.logger.info(f"Fixed traces: {self.fixed_traces}")
+        elif key == "c":
             # Clear all trails
             self._points.clear()
             self.logger.info("Cleared all trails")
+        elif key == "m":
+            # TkAgg window minimize
+            manager = plt.get_current_fig_manager()
+            if manager is not None and hasattr(manager, "window") and manager.window is not None:
+                manager.window.iconify()
+                self.logger.info("Plot window minimized")
+            else:
+                self.logger.info("Minimize not supported by current backend")
 
     def _setup_axes(self):
         """Setup the plot axes."""
@@ -134,8 +202,9 @@ class PositionPlotter:
         self._points[key].append((x_scaled, y_scaled, z_scaled, now))
 
         # Remove old points from trail
-        while self._points[key] and now - self._points[key][0][3] > self.trail_seconds:
-            self._points[key].popleft()
+        if not self.fixed_traces:
+            while self._points[key] and now - self._points[key][0][3] > self.trail_seconds:
+                self._points[key].popleft()
 
         # Redraw if enough time has passed
         if now - self._last_draw >= self.refresh_interval:
@@ -186,7 +255,7 @@ class PositionPlotter:
                 last_x, last_y, last_z, last_ts = samples[-1]
 
                 # Check if this object has timed out
-                if now - last_ts > self.decay_seconds:
+                if not self.fixed_traces and now - last_ts > self.decay_seconds:
                     expired.append((obj_type, name))
                     continue
 
@@ -208,7 +277,7 @@ class PositionPlotter:
                     size = 120
 
                 # Draw trail
-                if len(xs) > 1:
+                if self.show_traces and len(xs) > 1:
                     self.ax.plot(xs, ys, color=color, alpha=0.4, linewidth=2)
 
                 # Draw current position
@@ -231,7 +300,7 @@ class PositionPlotter:
                 )
 
                 # Velocity vector
-                if len(samples) >= 2:
+                if self.show_vel and len(samples) >= 2:
                     x0, y0, _, t0 = samples[-2]
                     dt = last_ts - t0
                     if dt > 0:
